@@ -1,52 +1,71 @@
-type Possible<T> = T | undefined;
+import type { Some, Result } from '~/utils/common.types'
 
-class Optional<Default,Value extends Possible<Default>> {
+declare type UnwrapFuncAlias<T> = ( def ?: T ) => NonNullable<T>;
 
-    static DEFAULT_ERROR = Error('mismatched or undefined type');
+export class Optional<T extends Some<any>> {
 
-    #def    : Default;
-    #value  : Value | Default;
-    #err    : Error = Optional.DEFAULT_ERROR;
+    static #DEFAULT_ERROR = Error("");
 
-    constructor(defaultValue: Default, value: Value, error ?: Error) {
+    #value    : Some<T>;
+    #error    : Error;
+    #resolve  : boolean = false;
 
-        this.#def = defaultValue;
-        this.#err = error || Optional.DEFAULT_ERROR;
-
-        this.#value = typeof defaultValue === typeof value
-            ? value
-            : defaultValue
-
+    constructor(value: T, error = Optional.#DEFAULT_ERROR) {
+        this.#value   = value;
+        this.#error   = error;
+        this.#resolve = value ? true : false;
     }
+
+    get is() { return this.#resolve }
 
     get some() {
-        return typeof this.#def === typeof this.#value
-            ? this.#value
-            : this.#def
+        return Optional.container(this.#value, this.#error);
     }
 
-    get error() {
-        return this.#def === this.some
-            ? this.#err || Optional.DEFAULT_ERROR
-            : null
+    get error(): Some<Error> {
+        return this.is ? undefined : this.#error;
     }
 
-}
+    private static unwrap<
+        T extends Some<any>, 
+        E extends Error
+    >( val: T, error: E, def?: T ): NonNullable<T> {
+        
+        if ( !val && def ) return def;
 
-class OptionalSet<Default,Value extends Possible<Default>> {
+        if ( !val ) throw Error("can't to unwrap undefined value because of " + error.message);
 
-    #opt: Array<Optional<Default,Value>> = Array(0);
+        return val;
 
-    constructor(opts: Array<Optional<Default,Value>>) {
-        this.#opt = opts;
     }
 
-    get values() {
-        return this.#opt.filter(({ error }) => !error ).map(({ some }) => some)
+    private static container<
+        T extends Some<any>,
+        E extends Error
+    >( value: T, error: E ): Result<T,E> {
+
+        const func = (def: T) => Optional.unwrap.apply(null, [ value, error, def ])
+
+        return {
+            value  : [ value, error ],
+            unwrap : func.bind(null, value),
+        }
+
     }
 
-    get errors() {
-        return this.#opt.filter(({ error }) => error ).map(({ error }) => error)
+    public static unwrapRecursive<
+        T extends Optional<any>,
+        E extends Error,
+    >({ some }: Optional<T> ): Result<T,Error> {
+
+        const [ val, error ] = some.value;
+
+        if ( val?.is === false ) return error;
+
+        return val instanceof Optional 
+            ? Optional.unwrapRecursive(some.unwrap()) 
+            : val;
+
     }
 
 }
